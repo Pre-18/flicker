@@ -7,7 +7,7 @@ const userSchema = new Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   fullName: { type: String, required: true, index: true,trim: true },
   watchHistory: { type: [Schema.Types.ObjectId], ref: "Video", default: [] },
-  avatar: { type: String, default: "" },
+  avatar: { type: String, default: true },
   coverimage: { type: String, default: "" },//cloudinary image url
   password: { type: String, required: [true, 'password is required'] },
   refreshToken: { type: String, default: "" },
