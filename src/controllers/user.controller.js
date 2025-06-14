@@ -3,6 +3,8 @@ import {ApiError} from "../utiles/ApiError.js"
 import {User} from "../models/user.model.js";
 import {uploadOnCloudinary} from "../utiles/fileUpload.js";
 import {ApiResponse} from "../utiles/ApiRespopnse.js";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
  const registerUser = asyncHandler(async (req, res) => {
     // Logic for registering a user
@@ -25,7 +27,7 @@ import {ApiResponse} from "../utiles/ApiRespopnse.js";
     if (existingUser) {
         throw new ApiError(409, "User already exists");
     }
-    //console.log("req.files", req.files);
+  //  console.log("req.files", req.files);
      // Handle avatar upload
      const avatarLocalPath = req.files?.avatar?.[0]?.path;
     //const avatarCloudPath = avatarLocalPath ? await uploadOnCloudinary(avatarLocalPath) : "";
