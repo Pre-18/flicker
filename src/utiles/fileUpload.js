@@ -13,8 +13,10 @@ cloudinary.config({
     const response = await cloudinary.uploader.upload(filePath, {
       resource_type: "auto", // Automatically detect the resource type (image, video, etc.)
     });
-    console.log("file is uploaded on cloudinary",response.url);
-    return response;
+   // console.log("file is uploaded on cloudinary",response.url);
+    //return response;
+    fs.unlinkSync(filePath); // Delete the file after upload
+    return response
   } catch (error) { fs.unlinkSync(filePath); // Delete the file if upload fails
     console.error("Error uploading file to Cloudinary:", error);
    return null;
