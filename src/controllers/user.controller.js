@@ -6,7 +6,22 @@ import {ApiResponse} from "../utiles/ApiRespopnse.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
- const registerUser = asyncHandler(async (req, res) => {
+const generateAccessandRefreshToken = async (userId) => {
+    try {
+        const user = await User.findById(userId);
+        const accessToken = user.generateAccessToken();
+        const refreshToken = user.generateRefreshToken();
+        user.refreshToken = refreshToken;
+        await user.save({validateBeforeSave: false});
+        return { accessToken, refreshToken };
+    } catch (error) {
+        throw new ApiError(500, "Error generating tokens");
+        
+    }
+    
+};
+
+const registerUser = asyncHandler(async (req, res) => {
     // Logic for registering a user
     // get user details from frontend
     // validation - not empty
@@ -65,5 +80,53 @@ import mongoose from "mongoose";
     );
 });
 
+  // Logic for logging in a user
+  //user detail input and verification like email and password and username
+  // check if user exists
+// check if password is correct
+// generate access token and refresh token
+   
 
- export { registerUser };
+ const loginUser = asyncHandler(async (req, res) => {
+    const { username,email, password } = req.body;
+    if (!email || !password|| !username) {
+        throw new ApiError(400, "Email or username and password are required");
+    }
+    // Check if user exists
+    const user = await User.findOne({ username, email });
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+    // Check if password is correct
+    const isPasswordCorrect = await user.isPasswordCorrect(password);
+    if (!isPasswordCorrect) {
+        throw new ApiError(401, "Invalid credentials");
+    }
+    // Generate access token and refresh token
+
+    const { accessToken, refreshToken } = await generateAccessandRefreshToken(user._id);
+    // Remove sensitive fields from the response
+    const loggedInUser = await User.findById(user._id).select(
+        "-password -refreshToken"
+    );
+    const options = {
+        httpOnly: true,
+        secure: true
+    };
+    return res.status(200).
+    cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(200, "User logged in successfully", 
+      { user: loggedInUser, accessToken, refreshToken })
+    );
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
+
+     
+});
+
+
+
+ export { registerUser, loginUser };
