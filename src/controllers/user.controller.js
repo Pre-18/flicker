@@ -5,6 +5,7 @@ import {uploadOnCloudinary} from "../utiles/fileUpload.js";
 import {ApiResponse} from "../utiles/ApiResponse.js";
 import jwt from "jsonwebtoken";
 import { v2 as cloudinary } from 'cloudinary';
+import mongoose, { mongo } from "mongoose";
 // Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -386,6 +387,57 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
               new ApiResponse(200, "Channel profile fetched successfully", channel[0])
          );
    })
+
+   const getWatchHistory= asyncHandler(async (req, res) => {
+    const user= await User.aggregate([
+        {
+            $match:{
+                _id:   mongoose.Types.ObjectId.createFromTime(req.user._id)   
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                pipeline:[
+                    {
+                        $lookup:{
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields:{
+                            owner: {
+                                $first: "$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+       
+    ])
+    
+    return res.status(200).json(
+        new ApiResponse(200, "Watch history fetched successfully", user[0]?.watchHistory || [])
+    )
+
+   });
+
    
 
  export {
@@ -400,5 +452,6 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
           updateUserCoverImage,
           deleteAvatar,
           deleteCoverImage,
-          getUserChannelProfile
+          getUserChannelProfile,
+          getWatchHistory
         };
