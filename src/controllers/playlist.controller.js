@@ -159,3 +159,124 @@ const getUserPlaylistNames = asyncHandler(async(req,res,next) => {
 
 });
 
+const getPlaylistById = asyncHandler(async (req,res,next) => {
+    const {playListId} =req.params;
+
+    if(!playListId){
+        return next(new ApiError(400,"Playlist Id is missing "))
+    }
+    
+    if(!isValidObjectId(playListId)){
+        return next(new ApiError(400,"Playlist Id is invalid "))
+    }
+
+    const pipeline =  [
+        {
+            $match: {
+            _id: new mongoose.Types.ObjectId(playListId),
+                  },
+        },
+        {
+            $lookup : {
+                from:"videos",
+                localField:"videos",
+                foreignField:"_id",
+                as:"videoDetails"
+            }
+        },
+        {
+            $addFields:{
+                videos:{
+                    $ifNull:["$videos",[]],
+                },
+                videoDetails:{
+                    $ifNull:["$videoDetails",[]]
+                }
+            }
+        },
+        {
+            $unwind:{
+                path: "$videoDetails",
+                preserveNullAndEmptyArrays:true,
+            },
+        },
+       {     
+        $lookup:{
+              
+              from:"users",
+              localField:"videoDetails.owner",
+              foreignField:"_id",
+              as:"ownerDetails"
+            }
+        } ,
+        {
+            $addFields:{
+                "videoDetails.owner":{
+                    $arrayElemAt:["$ownerDetails",0],
+
+                }
+            }
+        },
+         {
+      $group: {
+        _id: "$_id", 
+        title: { $first: "$title" },
+        description: { $first: "$description" },
+        owner: { $first: "$owner" },
+        updatedAt: { $first: "$updatedAt" },
+        videos: {
+          $push: {
+            $cond: {
+              if: { $ne: ["$videoDetails", null] }, 
+              then: "$videoDetails", 
+              else: "$$REMOVE", 
+            },
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        title: 1,
+        description: 1,
+        owner: 1,
+        updatedAt: 1,
+        videos: {
+          $cond: {
+            if: { $eq: [{ $size: "$videos" }, 0] }, 
+            then: [],
+            else: "$videos", 
+          },
+        },
+      },
+    },
+            
+    ]
+      
+    const playlist=await Playlist.aggregate(pipeline);
+    
+    
+  if (!playlist.length) {
+    return next(new ApiError(404, "Playlist doesn't exist in DB"));
+  }
+
+  // Authorization: Is the requesting user the owner?
+  if (!authorizedOwner(req.user, playlist[0].owner)) {
+    return next(
+      new ApiError(401, "Unauthorized request, you don't own this playlist")
+    );
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, playlist[0], "Playlist fetched successfully"));
+
+});
+
+export{
+    getPlaylistById,
+    createPlaylist,
+    getUserPlaylistNames,
+    getUserPlaylists,
+    
+};
