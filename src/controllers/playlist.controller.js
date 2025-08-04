@@ -160,20 +160,20 @@ const getUserPlaylistNames = asyncHandler(async(req,res,next) => {
 });
 
 const getPlaylistById = asyncHandler(async (req,res,next) => {
-    const {playListId} =req.params;
+    const {playlistId} =req.params;
 
-    if(!playListId){
+    if(!playlistId){
         return next(new ApiError(400,"Playlist Id is missing "))
     }
     
-    if(!isValidObjectId(playListId)){
+    if(!isValidObjectId(playlistId)){
         return next(new ApiError(400,"Playlist Id is invalid "))
     }
 
     const pipeline =  [
         {
             $match: {
-            _id: new mongoose.Types.ObjectId(playListId),
+            _id: new mongoose.Types.ObjectId(playlistId),
                   },
         },
         {
@@ -273,10 +273,66 @@ const getPlaylistById = asyncHandler(async (req,res,next) => {
 
 });
 
+  const addVideoToPlaylist = asyncHandler(async (req, res, next) => {
+    const {playlistId,videoId} = req.params;
+
+    if(!videoId || !playlistId){
+        return next(new ApiError(400,"video id or playlist id is not provided"));
+    }
+
+    if(!isValidObjectId(videoId) || !isValidObjectId(playlistId)){
+        return next(new ApiError(400,"Invalid video Id or playlist id"))
+    }
+
+    const playlist= await Playlist.findById(playlistId);
+
+    if(!playlist){
+        return next(new ApiError(400,"Playlist does not exist"))
+    }
+
+    if(!authorizedOwner(req.user,playlist.owner)){
+        return next(new ApiError(401,"unauthorized access"));
+        }
+    
+    if(playlist.videos.includes(videoId)){
+        return next(new ApiError(400,"Video is already the part of this playlist"))
+    }
+
+    const video= await Video.findOne({_id:videoId});
+
+    if(!video){
+        return next(new ApiError(400,"video does not exist in the database"))
+    }
+
+    if(!video.isPublished){
+        return next(new ApiError(400, 
+            "Please publish the video first and then add to this playlist"))
+    }
+ 
+
+    const updatedPlaylist = await Playlist.findByIdAndUpdate(
+        playlist,{
+            $push:{videos:videoId}
+        },
+        {
+            new: true
+        }
+    );
+
+    res
+    .status(200)
+    .json(
+        new ApiResponse(200,updatedPlaylist,"video addded successfully to the playlist")
+    );
+
+ 
+  })
+
 export{
     getPlaylistById,
     createPlaylist,
     getUserPlaylistNames,
     getUserPlaylists,
+    addVideoToPlaylist,
     
 };
