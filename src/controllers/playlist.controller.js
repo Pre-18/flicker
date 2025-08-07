@@ -328,11 +328,61 @@ const getPlaylistById = asyncHandler(async (req,res,next) => {
  
   })
 
+   const removeVideoFromPlaylist = asyncHandler(async (req,res,next)=>{
+   
+    const {videoId,playlistId} = req.params;
+
+     if(!videoId || !playlistId){
+        return next(new ApiError(400,"video id or playlist id is not provided"));
+    }
+
+    if(!isValidObjectId(videoId) || !isValidObjectId(playlistId)){
+        return next(new ApiError(400,"Invalid video Id or playlist id"))
+    }
+
+    const playlist= await Playlist.findById(playlistId);
+
+    if(!playlist){
+        return next(new ApiError(400,"Playlist does not exist"))
+    }
+
+    if(!authorizedOwner(req.user,playlist.owner)){
+        return next(new ApiError(401,"unauthorized access"));
+    }
+
+      if (!playlist.videos.some(v => v.toString() === videoId)) {
+        return next(new ApiError(400, "Video is not part of this playlist"));
+    }
+
+    const updatedPlaylist= await Playlist.findByIdAndUpdate(
+        playlistId,
+        {
+            $pull:{
+                videos: videoId
+            }
+        },
+        {
+            new:true
+        }
+    );
+
+    res
+    .status(200)
+    .json(
+        new ApiResponse(200,updatedPlaylist,"Video removed from playlist successfully")
+    );
+
+   })
+
+
+
+
 export{
     getPlaylistById,
     createPlaylist,
     getUserPlaylistNames,
     getUserPlaylists,
     addVideoToPlaylist,
+    removeVideoFromPlaylist,
     
 };
