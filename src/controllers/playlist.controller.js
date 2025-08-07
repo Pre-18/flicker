@@ -432,6 +432,45 @@ const getPlaylistById = asyncHandler(async (req,res,next) => {
    });
 
 
+   const deletePlaylist = asyncHandler(async (req,res,next)=>{
+    const {playlistId}= req.params;
+    
+     if (!playlistId) {
+    return next(new ApiError(400, "Playlist Id is missing"));
+    }
+
+    if (!isValidObjectId(playlistId)) {
+    return next(new ApiError(400, "Invalid playlist Id"));
+    }
+
+    const playlist=await Playlist.findById(playlistId);
+
+    if(!playlist){
+         return next(new ApiError(404, "Playlist doesn't exist in DB"));
+    }
+ 
+    
+    if(!authorizedOwner(req.user,playlist.owner)){
+        return next(new ApiError(401,"unauthorized access"));
+    }
+
+    const deletedPlaylist = await Playlist.findByIdAndDelete(playlistId);
+
+    if(!deletedPlaylist){
+        return next(new ApiError(500,"something went wrong while deleting playlist"))
+    }
+
+    console.log(deletedPlaylist);
+
+    res
+    .status(200)
+    .json(
+        new ApiResponse(200,{},"playlist deleted successfully")
+    );
+
+   });
+
+
 export{
     getPlaylistById,
     createPlaylist,
@@ -440,5 +479,6 @@ export{
     addVideoToPlaylist,
     removeVideoFromPlaylist,
     updatePlaylist,
-    
+    deletePlaylist,
+
 };
