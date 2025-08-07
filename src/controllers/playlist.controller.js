@@ -374,7 +374,62 @@ const getPlaylistById = asyncHandler(async (req,res,next) => {
 
    })
 
+   const updatePlaylist= asyncHandler(async (req,res,next)=>{
+   
+    const {playlistId} = req.params;
+    const {name,description} = req.body;
 
+    if (!playlistId) {
+    return next(new ApiError(400, "Playlist Id is missing"));
+    }
+
+    if (!isValidObjectId(playlistId)) {
+    return next(new ApiError(400, "Invalid playlist Id"));
+    }
+
+    const playlist=await Playlist.findById(playlistId);
+
+    if(!playlist){
+         return next(new ApiError(400, "Playlist doesn't exist in DB"));
+    }
+ 
+    
+    if(!authorizedOwner(req.user,playlist.owner)){
+        return next(new ApiError(401,"unauthorized access"));
+    }
+
+    if(!(name || description)){
+        return next(new ApiError(400,"Please provide at least one field to update"))
+    }
+
+  const updateData = {};
+    if (name) updateData.title = name;
+    if (description) updateData.description = description;
+
+    const updatedPlaylist = await Playlist.findByIdAndUpdate(
+        playlistId,
+        updateData,
+        { new: true }
+    );
+
+
+    if(!updatedPlaylist){
+        return next(
+            new ApiError(500,"something went wrong while updating playlist")
+        );
+    }
+
+    res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            updatedPlaylist,
+            "playlist details updated successfully"
+        )
+    );
+
+   });
 
 
 export{
@@ -384,5 +439,6 @@ export{
     getUserPlaylists,
     addVideoToPlaylist,
     removeVideoFromPlaylist,
+    updatePlaylist,
     
 };
