@@ -125,8 +125,95 @@ const publishVideo = asyncHandler(async (req, res, next) => {
 });
 
 
+const getVideoById = asyncHandler(async (req, res, next) => {
+  const { videoId } = req.params;
+
+  if (!videoId) throw new ApiError(400, "video id is missing");
+  if (!isValidObjectId(videoId)) throw new ApiError(400, "invalid video id");
+
+  // Increment views and check existence
+  const viewUpdate = await Video.updateOne(
+    { _id: videoId },
+    { $inc: { views: 1 } }
+  );
+  if (viewUpdate.matchedCount === 0) {
+    throw new ApiError(404, `video with id ${videoId} not found`);
+  }
+
+  const pipeline = [
+    { $match: { _id: new mongoose.Types.ObjectId(videoId) } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+        pipeline: [
+          { $project: { userName: 1, fullName: 1, avatar: 1 } }
+        ]
+      }
+    },
+    {
+      $lookup: {
+        from: "likes",
+        localField: "_id",
+        foreignField: "video",
+        as: "likes"
+      }
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "owner._id",
+        foreignField: "channel",
+        as: "subscribers"
+      }
+    },
+    {
+      $addFields: {
+        owner: { $first: "$owner" },
+        likes: { $size: "$likes" },
+        subscribers: { $size: "$subscribers" },
+        isLiked: req.user ? {
+          $anyElementTrue: {
+            $map: {
+              input: "$likes",
+              as: "like",
+              in: { $eq: ["$$like.likedBy", req.user._id] }
+            }
+          }
+        } : false,
+        isSubscribed: req.user ? {
+          $anyElementTrue: {
+            $map: {
+              input: "$subscribers",
+              as: "sub",
+              in: { $eq: ["$$sub.subscriber", req.user._id] }
+            }
+          }
+        } : false
+      }
+    }
+  ];
+
+  const videoAgg = await Video.aggregate(pipeline);
+  if (!videoAgg.length) throw new ApiError(404, "Video not found after aggregation");
+
+  // Update watch history in DB directly
+  if (req.user) {
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { watchHistory: videoId },
+      $push: { watchHistory: { $each: [videoId], $position: 0 } }
+    });
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, videoAgg[0], `video with id ${videoId} fetched successfully`)
+  );
+});
 
 export {
     publishVideo,
+    getVideoById,
 
 }
