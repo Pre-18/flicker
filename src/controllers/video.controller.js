@@ -212,8 +212,67 @@ const getVideoById = asyncHandler(async (req, res, next) => {
   );
 });
 
+const getPublishedVideosByChannel = asyncHandler(async (req,res,next)=>{
+  
+  const {userId} = req.params;
+  const {sortBy} = req.query;
+
+  if(!userId){
+    return next(new ApiError(400,"user id not found"))
+  }
+  
+  if (!isValidObjectId(userId)) {
+    return next(new ApiError(400, "Invalid User ID"));
+  }
+
+    const matchStage = {
+    owner: new mongoose.Types.ObjectId(userId),
+    isPublished: true
+  };
+
+  // Determine sorting
+  let sortStage = {};
+  if (sortBy === "latest") {
+    sortStage = { createdAt: -1 };
+  } else if (sortBy === "oldest") {
+    sortStage = { createdAt: 1 };
+  } else if (sortBy) {
+    return next(new ApiError(400, `Invalid sortBy value: ${sortBy}`));
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    ...(Object.keys(sortStage).length ? [{ $sort: sortStage }] : []),
+    {
+      $project: {
+        thumbnail: 1,
+        title: 1,
+        duration: 1,
+        views: 1,
+        createdAt: 1,
+        updatedAt: 1
+      }
+    }
+  ];
+
+  const videos = await Video.aggregate(pipeline);
+
+  if (videos.length === 0) {
+    return next(new ApiError(404, "No published videos found for this channel"));
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, videos, "All published videos fetched successfully")
+  );
+ 
+
+});
+
+
+
 export {
     publishVideo,
     getVideoById,
+    getPublishedVideosByChannel,
 
 }
