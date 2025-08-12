@@ -1,7 +1,7 @@
 import { asyncHandler } from "../utiles/asyncHandler";
 import { ApiError } from "../utiles/ApiError";
 import { ApiResponse } from "../utiles/ApiResponse";
-import { uploadOnCloudinary } from "../utiles/fileUpload";
+import { uploadOnCloudinary,deleteFromCloudinary } from "../utiles/fileUpload";
 import { Video } from "../models/video.model";
 import { User } from "../models/user.model";
 import mongoose,{isValidObjectId} from "mongoose";
@@ -381,11 +381,135 @@ const getVideosDataByChannel = asyncHandler(async (req, res, next) => {
   );
 });
 
+const updateVideo = asyncHandler(async (req, res, next) => {
+  const { videoId } = req.params;
+
+  if (!videoId) {
+    return next(new ApiError(400, "video id is missing."));
+  }
+  if (!isValidObjectId(videoId)) {
+    return next(new ApiError(400, "invalid video id"));
+  }
+
+  const { title, description, visibility } = req.body;
+
+  // Parse playlistIds safely
+  let playlistIds = [];
+  try {
+    playlistIds = JSON.parse(req.body.playlistIds || "[]");
+  } catch {
+    return next(new ApiError(400, "Invalid playlistIds format"));
+  }
+
+  // Aggregate to get old thumbnail
+  const oldThumbData = await Video.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(videoId) } },
+    { $project: { _id: 0, thumbnail: 1 } },
+  ]);
+  const oldThumbnail = oldThumbData[0]?.thumbnail;
+
+  let thumbnailLocalPath, newThumbnail;
+  if (req.file) {
+    thumbnailLocalPath = req.file?.path;
+    newThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+
+    if (!newThumbnail) {
+      return next(new ApiError(500, "something went wrong while uploading thumbnail"));
+    }
+
+    // Delete old thumbnail from Cloudinary
+    if (oldThumbnail) {
+      await deleteFromCloudinary(
+        oldThumbnail.split("/").pop().split(".")[0]
+      );
+    }
+  }
+
+  // Add video to playlists
+  if (Array.isArray(playlistIds) && playlistIds.length > 0) {
+    for (const playlistId of playlistIds) {
+      await addVideoToPlaylistUtility(videoId, playlistId, req);
+    }
+  }
+
+  const isPublished = visibility === "public";
+
+  // Only overwrite thumbnail if present
+  const updateFields = { title, description, isPublished };
+  if (newThumbnail?.url) updateFields.thumbnail = newThumbnail.url;
+
+  const updatedVideo = await Video.findByIdAndUpdate(
+    videoId,
+    { $set: updateFields },
+    { new: true }
+  );
+
+  if (!updatedVideo) {
+    return next(new ApiError(404, `video with id ${videoId} does not exist`));
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, updatedVideo, "Video details updated successfully"));
+});
+
+const deleteVideo = asyncHandler(async (req, res, next) => {
+  const { videoId } = req.params;
+
+  if (!videoId) {
+    return next(new ApiError(400, "video id is missing."));
+  }
+
+  if (!isValidObjectId(videoId)) {
+    return next(new ApiError(400, "invalid video id"));
+  }
+
+  // Fetch video once
+  const video = await Video.findById(videoId);
+  if (!video) {
+    return next(new ApiError(404, `video with id ${videoId} not found`));
+  }
+
+  // Authorization check
+  if (req.user._id.toString() !== video.owner.toString()) {
+    return next(
+      new ApiError(401, "You do not have permission to perform this action on this resource")
+    );
+  }
+
+  // Prepare Cloudinary deletions
+  try {
+    const videoPublicId = video.videofile.split("/").pop().split(".")[0];
+    const thumbnailPublicId = video.thumbnail.split("/").pop().split(".")[0];
+    
+    await deleteFromCloudinary(videoPublicId);
+    await deleteFromCloudinary(thumbnailPublicId);
+  } catch (err) {
+    console.error("Cloudinary deletion failed:", err);
+    return next(new ApiError(500, "Failed to delete media from Cloudinary"));
+  }
+
+  // Optional: remove video from all playlists
+  await Playlist.updateMany(
+    { videos: video._id },
+    { $pull: { videos: video._id } }
+  );
+
+  // Delete from DB
+  await Video.findByIdAndDelete(videoId);
+
+  res.status(200).json(
+    new ApiResponse(200, {}, "Video deleted successfully")
+  );
+});
+
 
 export {
     publishVideo,
     getVideoById,
     getPublishedVideosByChannel,
     getVideosDataByChannel,
+    updateVideo,
+    deleteVideo,
 
 }
