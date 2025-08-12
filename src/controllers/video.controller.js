@@ -268,11 +268,124 @@ const getPublishedVideosByChannel = asyncHandler(async (req,res,next)=>{
 
 });
 
+const getVideosDataByChannel = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    return next(new ApiError(400, "User ID is missing"));
+  }
+
+  if (!isValidObjectId(userId)) {
+    return next(new ApiError(400, "Invalid User ID"));
+  }
+
+  // Optional: check if user exists
+  const userExists = await User.exists({ _id: userId });
+  if (!userExists) {
+    return next(new ApiError(404, "User does not exist in the DB"));
+  }
+
+  const pipeline = [
+    {
+      $match: {
+        owner: new mongoose.Types.ObjectId(userId),
+      },
+    },
+    {
+      $sort: {
+        isPublished: 1, // drafts first
+        createdAt: -1,  // newest to oldest
+      },
+    },
+    {
+      $lookup: {
+        from: "comments",
+        localField: "_id",
+        foreignField: "video",
+        as: "comments",
+        pipeline: [{ $project: { _id: 1 } }],
+      },
+    },
+    {
+      $lookup: {
+        from: "likes",
+        localField: "_id",
+        foreignField: "video",
+        as: "likes",
+        pipeline: [{ $project: { _id: 1, likedBy: 1 } }],
+      },
+    },
+    {
+      $lookup: {
+        from: "playlists",
+        let: { videoId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $in: ["$$videoId", "$videos"] },
+                  { $eq: ["$owner", new mongoose.Types.ObjectId(userId)] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 1 } },
+        ],
+        as: "playlistIds",
+      },
+    },
+    {
+      $addFields: {
+        likes: { $size: "$likes" },
+        comments: { $size: "$comments" },
+        playlists: {
+          $map: {
+            input: "$playlistIds",
+            as: "pl",
+            in: "$$pl._id",
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        thumbnail: 1,
+        videofile: 1, // match your schema exactly
+        description: 1,
+        title: 1,
+        duration: 1,
+        playlists: 1,
+        views: 1,
+        isPublished: 1,
+        likes: 1,
+        comments: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+  ];
+
+  const videos = await Video.aggregate(pipeline);
+
+  if (videos.length === 0) {
+    return next(new ApiError(404, "No videos found for this channel"));
+  }
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      videos,
+      "All the videos of the channel fetched successfully"
+    )
+  );
+});
 
 
 export {
     publishVideo,
     getVideoById,
     getPublishedVideosByChannel,
+    getVideosDataByChannel,
 
 }
